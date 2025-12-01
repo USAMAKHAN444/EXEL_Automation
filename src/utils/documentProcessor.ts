@@ -15,6 +15,46 @@ export const groupByCustomer = (rows: DocumentRow[]) => {
   return Array.from(grouped.entries());
 };
 
+// Helper function to add delay between requests
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Retry logic with exponential backoff
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries = 3,
+  baseDelay = 2000
+): Promise<Response> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      // No timeout - allow unlimited processing time
+      const controller = new AbortController();
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        // No timeout, keepalive for long requests
+        keepalive: false, // Set to false for large payloads
+      });
+      
+      return response;
+    } catch (error: any) {
+      const isLastAttempt = attempt === maxRetries;
+      
+      if (isLastAttempt) {
+        console.error(`❌ Failed after ${maxRetries + 1} attempts:`, error);
+        throw error;
+      }
+      
+      // Exponential backoff
+      const delayMs = baseDelay * Math.pow(2, attempt);
+      console.warn(`⚠️ Attempt ${attempt + 1} failed, retrying in ${delayMs}ms...`);
+      await delay(delayMs);
+    }
+  }
+  
+  throw new Error('Unexpected error in fetchWithRetry');
+}
+
 // API call for categorization
 export const callCategorizeAPI = async (files: File[]): Promise<any> => {
   const formData = new FormData();
@@ -23,16 +63,22 @@ export const callCategorizeAPI = async (files: File[]): Promise<any> => {
     formData.append('files', file, file.name);
   });
 
-  const response = await fetch(`${API_BASE_URL}/categorize`, {
+  console.log('📤 POST /categorize - Starting...');
+  
+  const response = await fetchWithRetry(`${API_BASE_URL}/categorize`, {
     method: 'POST',
     body: formData,
   });
 
   if (!response.ok) {
-    throw new Error(`Categorize API failed: ${response.status}`);
+    const errorText = await response.text();
+    console.error('❌ /categorize error:', response.status, errorText);
+    throw new Error(`Categorize API failed: ${response.status} - ${errorText}`);
   }
 
-  return await response.json();
+  const result = await response.json();
+  console.log('✅ /categorize - Completed');
+  return result;
 };
 
 export const callGroupCreditCardsAPI = async (
@@ -47,11 +93,11 @@ export const callGroupCreditCardsAPI = async (
   const structureString = JSON.stringify(documentStructure);
   formData.append('document_structure', structureString);
 
-  console.log('📤 POST /group_credit_cards');
+  console.log('📤 POST /group_credit_cards - Starting...');
   console.log('  Files:', files.map(f => f.name));
   console.log('  document_structure:', structureString);
 
-  const response = await fetch(`${API_BASE_URL}/group_credit_cards`, {
+  const response = await fetchWithRetry(`${API_BASE_URL}/group_credit_cards`, {
     method: 'POST',
     body: formData,
   });
@@ -62,7 +108,9 @@ export const callGroupCreditCardsAPI = async (
     throw new Error(`Group credit cards API failed: ${response.status} - ${errorText}`);
   }
 
-  return await response.json();
+  const result = await response.json();
+  console.log('✅ /group_credit_cards - Completed');
+  return result;
 };
 
 export const callGroupDocumentsAPI = async (
@@ -77,22 +125,38 @@ export const callGroupDocumentsAPI = async (
   const structureString = JSON.stringify(documentStructure);
   formData.append('document_structure', structureString);
 
-  console.log('📤 POST /group_documents');
+  console.log('📤 POST /group_documents - Starting...');
   console.log('  Files:', files.map(f => f.name));
   console.log('  document_structure:', structureString);
+  console.log('  📊 Document structure object:', JSON.parse(structureString));
 
-  const response = await fetch(`${API_BASE_URL}/group_documents`, {
+  const response = await fetchWithRetry(`${API_BASE_URL}/group_documents`, {
     method: 'POST',
     body: formData,
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('❌ /group_documents error:', response.status, errorText);
+    console.error('❌❌❌ /group_documents BACKEND ERROR ❌❌❌');
+    console.error('Status:', response.status);
+    console.error('Error Response:', errorText);
+    console.error('Files sent:', files.map(f => f.name));
+    console.error('Structure sent:', structureString);
+    
+    // Try to parse error as JSON for better display
+    try {
+      const errorJson = JSON.parse(errorText);
+      console.error('Parsed Error:', errorJson);
+    } catch {
+      // Not JSON, already logged as text
+    }
+    
     throw new Error(`Group documents API failed: ${response.status} - ${errorText}`);
   }
 
-  return await response.json();
+  const result = await response.json();
+  console.log('✅ /group_documents - Completed');
+  return result;
 };
 
 // Map type to human-readable category name for Excel
@@ -341,9 +405,17 @@ export const processCustomerFiles = async (
         });
         onProgress('Credit card grouping complete');
     }
-    } catch (error) {
-      onProgress('Credit card grouping failed');
-      console.error('❌ Credit card grouping error:', error);
+    } catch (error: any) {
+      onProgress('❌ Credit card grouping failed - Check console for details');
+      console.error('❌❌❌ CREDIT CARD GROUPING ERROR ❌❌❌');
+      console.error('Error:', error);
+      console.error('Error message:', error?.message);
+      console.error('Files that were sent:', creditCardFiles.map(f => f.name));
+      console.error('Structure that was sent:', JSON.stringify(documentStructure, null, 2));
+      console.error('⚠️ Backend returned error. Check backend logs for detailed error!');
+      
+      // Continue processing other steps even if this fails
+      console.warn('⚠️ Continuing with document grouping...');
     }
   } else {
     console.log('💳 No credit cards found, skipping grouping');
@@ -456,9 +528,17 @@ export const processCustomerFiles = async (
         });
         onProgress('Document grouping complete');
       }
-    } catch (error) {
-      onProgress('Document grouping failed');
-      console.error('❌ Document grouping error:', error);
+    } catch (error: any) {
+      onProgress('❌ Document grouping failed - Check console for details');
+      console.error('❌❌❌ DOCUMENT GROUPING ERROR ❌❌❌');
+      console.error('Error:', error);
+      console.error('Error message:', error?.message);
+      console.error('Files that were sent:', documentFiles.map(f => f.name));
+      console.error('Structure that was sent:', JSON.stringify(documentStructure, null, 2));
+      console.error('⚠️ Backend returned 500 error. Check backend logs for detailed error!');
+      
+      // Continue processing other customers even if this fails
+      console.warn('⚠️ Continuing with next customer...');
     }
   } else {
     console.log('🧾 No other_documents found, skipping document grouping');

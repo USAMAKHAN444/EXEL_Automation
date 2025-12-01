@@ -108,6 +108,12 @@ const Index = () => {
         setRows((prev) =>
           prev.map((row) => updatedRowsMap.get(row.id) || row)
         );
+
+        // Add delay between customers to prevent overwhelming backend
+        // and allow connections to reset (500ms delay)
+        if (processedCount < customerGroups.length) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
       }
 
       setProcessingStatus({
