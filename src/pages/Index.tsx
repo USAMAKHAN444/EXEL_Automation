@@ -1,24 +1,42 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FileUploadZone } from '@/components/FileUploadZone';
 import { DataTable } from '@/components/DataTable';
 import { ProcessingPanel } from '@/components/ProcessingPanel';
+import { ServerSelector } from '@/components/ServerSelector';
 import { DocumentRow, ProcessingStatus } from '@/types/document';
 import { parseExcelFile, exportToExcel } from '@/utils/excelParser';
-import { groupByCustomer, processCustomerFiles } from '@/utils/documentProcessor';
+import { groupByCustomer, processCustomerFiles, setApiBaseUrl } from '@/utils/documentProcessor';
 import { Button } from '@/components/ui/button';
 import { Download, FileSpreadsheet, FolderOpen } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { ServerType, API_SERVERS, DEFAULT_SERVER } from '@/config/api';
 
 const Index = () => {
   const [rows, setRows] = useState<DocumentRow[]>([]);
   const [folderFiles, setFolderFiles] = useState<File[]>([]);
   const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [serverType, setServerType] = useState<ServerType>(DEFAULT_SERVER);
   const [processingStatus, setProcessingStatus] = useState<ProcessingStatus>({
     status: 'idle',
     totalCustomers: 0,
     processedCustomers: 0,
   });
   const { toast } = useToast();
+
+  // Update API base URL when server type changes
+  useEffect(() => {
+    const newUrl = API_SERVERS[serverType];
+    setApiBaseUrl(newUrl);
+    console.log(`🌐 Server switched to: ${serverType} (${newUrl})`);
+  }, [serverType]);
+
+  const handleServerChange = (newServer: ServerType) => {
+    setServerType(newServer);
+    toast({
+      title: 'Server Changed',
+      description: `Now using ${newServer === 'local' ? 'Local' : 'Remote Staging'} server: ${API_SERVERS[newServer]}`,
+    });
+  };
 
   const handleFolderUpload = (files: File[]) => {
     setFolderFiles(files);
@@ -174,6 +192,15 @@ const Index = () => {
               <Download className="w-4 h-4" />
               Export Results
             </Button>
+          </div>
+          
+          {/* Server Selection */}
+          <div className="mt-4 pt-4 border-t">
+            <ServerSelector
+              value={serverType}
+              onChange={handleServerChange}
+              disabled={processingStatus.status === 'processing'}
+            />
           </div>
         </div>
       </div>

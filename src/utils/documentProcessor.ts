@@ -1,5 +1,16 @@
 import { DocumentRow } from '@/types/document';
-import { API_BASE_URL } from '@/config/api';
+
+// Module-level variable to store the current API base URL
+let currentApiBaseUrl = 'https://gb-ocr-stage.vertekx.com';
+
+// Set the API base URL (called from the UI when server changes)
+export const setApiBaseUrl = (url: string) => {
+  currentApiBaseUrl = url;
+  console.log(`🔧 API Base URL set to: ${url}`);
+};
+
+// Get current API base URL
+export const getApiBaseUrl = () => currentApiBaseUrl;
 
 // Group rows by customer while maintaining order
 export const groupByCustomer = (rows: DocumentRow[]) => {
@@ -65,7 +76,7 @@ export const callCategorizeAPI = async (files: File[]): Promise<any> => {
 
   console.log('📤 POST /categorize - Starting...');
   
-  const response = await fetchWithRetry(`${API_BASE_URL}/categorize`, {
+  const response = await fetchWithRetry(`${currentApiBaseUrl}/categorize`, {
     method: 'POST',
     body: formData,
   });
@@ -97,7 +108,7 @@ export const callGroupCreditCardsAPI = async (
   console.log('  Files:', files.map(f => f.name));
   console.log('  document_structure:', structureString);
 
-  const response = await fetchWithRetry(`${API_BASE_URL}/group_credit_cards`, {
+  const response = await fetchWithRetry(`${currentApiBaseUrl}/group_credit_cards`, {
     method: 'POST',
     body: formData,
   });
@@ -130,7 +141,7 @@ export const callGroupDocumentsAPI = async (
   console.log('  document_structure:', structureString);
   console.log('  📊 Document structure object:', JSON.parse(structureString));
 
-  const response = await fetchWithRetry(`${API_BASE_URL}/group_documents`, {
+  const response = await fetchWithRetry(`${currentApiBaseUrl}/group_documents`, {
     method: 'POST',
     body: formData,
   });
